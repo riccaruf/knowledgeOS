@@ -1,0 +1,47 @@
+<h1>Chat</h1>
+
+<div class="chat-log">
+  @for (turn of turns(); track $index) {
+    <div class="turn">
+      <div class="question">{{ turn.question }}</div>
+      <div class="answer">
+        <p>{{ turn.response.answer }}</p>
+        <p class="confidence">Confidenza: {{ confidenceLabel(turn.response.confidence) }} ({{ turn.response.confidence | number: '1.0-2' }})</p>
+
+        @if (turn.response.sources.length) {
+          <div class="sources">
+            <h3>Fonti</h3>
+            @for (source of turn.response.sources; track $index) {
+              <div class="source">
+                <div class="source-title">{{ source.documentTitle }} — v{{ source.versionLabel }} — pag. {{ source.page }}</div>
+                @if (source.section) {
+                  <div class="source-section">{{ source.section }}</div>
+                }
+                <blockquote>{{ source.excerpt }}</blockquote>
+              </div>
+            }
+          </div>
+        }
+      </div>
+    </div>
+  } @empty {
+    <p class="empty">Fai una domanda sulla documentazione aziendale caricata.</p>
+  }
+</div>
+
+@if (error()) {
+  <p class="error">{{ error() }}</p>
+}
+
+<div class="composer">
+  <input
+    type="text"
+    placeholder="Fai una domanda..."
+    [(ngModel)]="question"
+    name="question"
+    (keydown.enter)="ask()"
+  />
+  <button type="button" (click)="ask()" [disabled]="asking()">
+    {{ asking() ? 'Attendere...' : 'Invia' }}
+  </button>
+</div>

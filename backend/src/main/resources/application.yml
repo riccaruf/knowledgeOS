@@ -1,0 +1,58 @@
+spring:
+  application:
+    name: knowledgeos-backend
+
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/knowledgeos}
+    username: ${SPRING_DATASOURCE_USERNAME:knowledgeos}
+    password: ${SPRING_DATASOURCE_PASSWORD:knowledgeos}
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          jwk-set-uri: ${KEYCLOAK_JWK_SET_URI:http://localhost:8081/realms/knowledgeos/protocol/openid-connect/certs}
+
+  servlet:
+    multipart:
+      max-file-size: 100MB
+      max-request-size: 100MB
+
+server:
+  port: 8080
+
+knowledgeos:
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:4200}
+  minio:
+    endpoint: ${MINIO_ENDPOINT:http://localhost:9000}
+    access-key: ${MINIO_ACCESS_KEY:knowledgeos}
+    secret-key: ${MINIO_SECRET_KEY:knowledgeos123}
+  ollama:
+    base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
+    llm-model: ${OLLAMA_LLM_MODEL:qwen2.5:7b}
+    embedding-model: ${OLLAMA_EMBEDDING_MODEL:nomic-embed-text}
+    embedding-dimension: 768
+  ingestion:
+    poll-interval-ms: 3000
+    chunk-target-tokens: 500
+    chunk-max-tokens: 800
+  retrieval:
+    top-k: 6
+
+logging:
+  level:
+    com.knowledgeos: INFO

@@ -1,0 +1,19 @@
+<div class="shell">
+  <header class="topbar">
+    <div class="brand">KnowledgeOS</div>
+    <nav>
+      <a routerLink="/documents" routerLinkActive="active">Documenti</a>
+      <a routerLink="/chat" routerLinkActive="active">Chat</a>
+    </nav>
+    @if (me(); as current) {
+      <div class="user">
+        <span class="user-name">{{ current.displayName || current.email }}</span>
+        <button type="button" class="link-button" (click)="logout()">Esci</button>
+      </div>
+    }
+  </header>
+
+  <main class="content">
+    <router-outlet />
+  </main>
+</div>

@@ -1,0 +1,135 @@
+name: knowledgeos
+
+networks:
+  knowledgeos-net:
+    driver: bridge
+
+volumes:
+  postgres-data:
+  minio-data:
+
+services:
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_DB: knowledgeos
+      POSTGRES_USER: knowledgeos
+      POSTGRES_PASSWORD: knowledgeos
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks: [knowledgeos-net]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U knowledgeos"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: knowledgeos
+      MINIO_ROOT_PASSWORD: knowledgeos123
+    volumes:
+      - minio-data:/data
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    networks: [knowledgeos-net]
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    networks: [knowledgeos-net]
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 knowledgeos knowledgeos123 &&
+      mc mb -p local/tenant-demo-docs &&
+      echo 'Bucket tenant-demo-docs pronto.'
+      "
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      # Hostname fisso: senza questo, Keycloak genera l'issuer/le URL nei
+      # token in base all'Host header della richiesta in ingresso — diverso
+      # a seconda che arrivi dal browser (localhost:8081) o da un container
+      # sulla rete Docker interna (keycloak:8080), causando 401 lato backend
+      # per mismatch dell'issuer. Keycloak 26 usa l'hostname provider v2:
+      # la porta va nell'URL di KC_HOSTNAME, non in KC_HOSTNAME_PORT (v1, deprecata).
+      KC_HOSTNAME: http://localhost:8081
+      KC_HOSTNAME_STRICT: "false"
+    volumes:
+      - ./keycloak/knowledgeos-realm.json:/opt/keycloak/data/import/knowledgeos-realm.json:ro
+    ports:
+      - "8081:8080"
+    networks: [knowledgeos-net]
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/localhost/8080'"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # Nota per lo sviluppo locale: nessun servizio "ollama" containerizzato qui.
+  # Questa macchina di sviluppo ha gia' un'istanza Ollama nativa (systemd,
+  # 127.0.0.1:11434) con modelli gia' scaricati — il backend punta a quella
+  # tramite host.docker.internal invece di farne partire una seconda in
+  # conflitto di porta. In un deployment reale Ollama puo' tornare containerizzato:
+  # e' un dettaglio operativo, non un vincolo architetturale (02_SOLUTION_ARCHITECTURE.md §3.8).
+
+  backend:
+    build:
+      context: ../backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      keycloak:
+        condition: service_healthy
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/knowledgeos
+      SPRING_DATASOURCE_USERNAME: knowledgeos
+      SPRING_DATASOURCE_PASSWORD: knowledgeos
+      # jwk-set-uri (non issuer-uri): il backend deve raggiungere Keycloak
+      # tramite l'hostname interno Docker per scaricare le chiavi di firma,
+      # ma il token del browser ha iss=http://localhost:8081/... — usare
+      # jwk-set-uri evita la validazione dell'issuer (che fallirebbe per il
+      # mismatch di hostname) mantenendo comunque la verifica della firma.
+      KEYCLOAK_JWK_SET_URI: http://keycloak:8080/realms/knowledgeos/protocol/openid-connect/certs
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ACCESS_KEY: knowledgeos
+      MINIO_SECRET_KEY: knowledgeos123
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
+      # llama3.2:1b ignorava il contesto RAG fornito su domande con contesto
+      # ampio/multilingua (risposte generiche non ancorate alle fonti);
+      # qwen2.5-coder:3b (gia' presente sull'host, nessun nuovo download)
+      # segue meglio l'istruzione "rispondi solo dal contesto".
+      OLLAMA_LLM_MODEL: qwen2.5-coder:3b
+      OLLAMA_EMBEDDING_MODEL: embeddinggemma
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "8080:8080"
+    networks: [knowledgeos-net]
+
+  frontend:
+    build:
+      context: ../frontend
+    depends_on: [backend]
+    ports:
+      - "4200:80"
+    networks: [knowledgeos-net]

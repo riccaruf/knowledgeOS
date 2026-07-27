@@ -1,0 +1,69 @@
+<h1>Documenti</h1>
+
+@if (canUpload) {
+  <section class="upload-card">
+    <h2>Carica un nuovo documento (PDF)</h2>
+    <div class="upload-form">
+      <input type="file" accept="application/pdf" (change)="onFileSelected($event)" />
+      <input type="text" placeholder="Titolo" [(ngModel)]="title" name="title" />
+      <input type="text" placeholder="Categoria (opzionale)" [(ngModel)]="category" name="category" />
+      <input type="text" placeholder="Reparto (opzionale)" [(ngModel)]="department" name="department" />
+      <button type="button" (click)="upload()" [disabled]="uploading()">
+        {{ uploading() ? 'Caricamento...' : 'Carica' }}
+      </button>
+    </div>
+    @if (uploadError()) {
+      <p class="error">{{ uploadError() }}</p>
+    }
+  </section>
+}
+
+<section class="document-list">
+  @if (loading()) {
+    <p>Caricamento in corso...</p>
+  } @else if (documents().length === 0) {
+    <p>Nessun documento presente nella knowledge base.</p>
+  } @else {
+    <table>
+      <thead>
+        <tr>
+          <th>Titolo</th>
+          <th>Categoria</th>
+          <th>Reparto</th>
+          <th>Versione</th>
+          <th>Stato ingestion</th>
+          @if (canDelete) {
+            <th></th>
+          }
+        </tr>
+      </thead>
+      <tbody>
+        @for (doc of documents(); track doc.id) {
+          <tr>
+            <td>{{ doc.title }}</td>
+            <td>{{ doc.category || '—' }}</td>
+            <td>{{ doc.department || '—' }}</td>
+            <td>{{ doc.currentVersion?.versionLabel || '—' }}</td>
+            <td>
+              <span class="status" [class]="'status-' + (doc.currentVersion?.ingestionStatus || 'unknown')">
+                {{ doc.currentVersion?.ingestionStatus || 'N/D' }}
+              </span>
+            </td>
+            @if (canDelete) {
+              <td>
+                <button
+                  type="button"
+                  class="delete-button"
+                  [disabled]="deletingId() === doc.id"
+                  (click)="deleteDocument(doc)"
+                >
+                  {{ deletingId() === doc.id ? 'Eliminazione...' : 'Elimina' }}
+                </button>
+              </td>
+            }
+          </tr>
+        }
+      </tbody>
+    </table>
+  }
+</section>
