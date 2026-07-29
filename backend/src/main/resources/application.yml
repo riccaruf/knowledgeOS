@@ -52,6 +52,9 @@ knowledgeos:
     chunk-max-tokens: 800
   retrieval:
     top-k: 6
+    candidate-pool-size: 40
+    rrf-k: 60
+    rerank-excerpt-chars: 600
 
 logging:
   level:

@@ -49,10 +49,10 @@ Obiettivo: rendere il sistema utilizzabile in produzione da più clienti/reparti
 
 ### 3.1 Retrieval e qualità delle risposte
 
-- **Hybrid Search** completa: fusione tra ricerca vettoriale e keyword (`05_RAG_PIPELINE.md` §5.3).
-- **Reranking** dedicato (cross-encoder locale) per aumentare la precisione dei chunk selezionati.
-- **Context Builder** avanzato: espansione a capitolo, inclusione tabelle correlate, deduplicazione.
-- Estensione formati documentali: **Word (.docx)**, **Excel (.xlsx)**, PDF scansionati con **OCR**.
+- **Hybrid Search** completa: fusione tra ricerca vettoriale e keyword (`05_RAG_PIPELINE.md` §5.3). ✅ Implementato (primo giro Milestone 2) — vedi §7bis.
+- **Reranking** dedicato (cross-encoder locale) per aumentare la precisione dei chunk selezionati. ✅ Implementato come LLM-as-reranker, deviazione dichiarata in `05_RAG_PIPELINE.md` §5.4 — vedi §7bis.
+- **Context Builder** avanzato: espansione a capitolo, inclusione tabelle correlate, deduplicazione. ⏭️ Non ancora avviato.
+- Estensione formati documentali: **Word (.docx)**, **Excel (.xlsx)**, PDF scansionati con **OCR**. ⏭️ Non ancora avviato.
 
 ### 3.2 Multi-tenancy reale
 
@@ -150,7 +150,7 @@ Primo giro di implementazione completato (repository `backend/`, `frontend/`, `i
 | Parsing + Semantic Chunking | ✅ (semplificato) | Euristica font-size per sezioni PDF; soglia a conteggio parole invece di rottura semantica embedding-based (si veda `05_RAG_PIPELINE.md` §3.2) |
 | Embedding Generation | ✅ | Via Ollama (`nomic-embed-text` di default), modello disaccoppiato dall'LLM |
 | pgvector storage | ✅ | Incluso RLS con `FORCE` (si veda `06_SECURITY_MODEL.md` §3.2) |
-| RAG query | ✅ (solo vettoriale) | Hybrid search e reranking confermati come Milestone 2, non nel primo giro |
+| RAG query | ✅ (solo vettoriale nel primo giro) | Hybrid search e reranking implementati nel primo incremento di Milestone 2, si veda §7bis |
 | Risposte con citazioni | ✅ | Documento, versione, pagina, sezione, estratto, confidenza (media similarità) |
 | Audit minimo | ✅ | `audit_log`/`query_log` popolati; endpoint di consultazione senza ancora i filtri di `04_API_SPECIFICATION.md` §6.3 |
 | Multi-tenant (schema-ready, singolo tenant validato) | ✅ | Tenant demo seedato via Flyway, provisioning utenti JIT al primo login |
@@ -160,6 +160,21 @@ Deviazioni rispetto alla documentazione originale sono annotate puntualmente in 
 
 ---
 
+## 7bis. Stato di implementazione — Milestone 2 (primo incremento)
+
+Primo incremento di Milestone 2 completato: Hybrid Search + Reranking (§3.1, primi due punti). Stato:
+
+| Elemento | Stato | Note |
+|---|---|---|
+| Hybrid Search (vettoriale + keyword) | ✅ | `HybridSearchService`/`RrfMerger`/`ChunkRepository.searchByVector`+`searchByKeyword`; RRF su `content_tsv` già presente nello schema V1, nessuna migration aggiuntiva (`05_RAG_PIPELINE.md` §5.3) |
+| Reranking | ✅ (LLM-as-reranker) | `LlmReranker`, non un cross-encoder dedicato — deviazione dichiarata in `05_RAG_PIPELINE.md` §5.4 |
+| Confidence su punteggio di reranking | ✅ (semplificato) | Solo media dei punteggi normalizzati; copertura domanda e segnali del modello rimandati (`05_RAG_PIPELINE.md` §7.1) |
+| Context Builder avanzato, formati Word/Excel/OCR | ⏭️ | Non in perimetro di questo incremento, restano il resto di §3.1 |
+
+Test: prima suite di unit test del backend (`RrfMergerTest`, `LlmRerankResponseParserTest`, `LlmRerankerTest`, `AnswerGenerationServiceTest`) — la query SQL ibrida e il flusso end-to-end restano verificati manualmente contro `infra/docker-compose.yml`, stesso approccio della Milestone 1.
+
+---
+
 ## Stato del documento
 
-Documentazione architetturale approvata; primo giro di implementazione della Milestone 1 completato (si veda §7). Iterazioni successive continueranno ad aggiornare questa tabella.
+Documentazione architetturale approvata; primo giro di implementazione della Milestone 1 completato (si veda §7); primo incremento di Milestone 2 (Hybrid Search + Reranking) completato (si veda §7bis). Iterazioni successive continueranno ad aggiornare questa tabella.

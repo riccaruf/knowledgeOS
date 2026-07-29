@@ -34,7 +34,7 @@ public class ChunkRepository {
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?, ?, ?)
             """;
 
-    private static final String SEARCH_SQL = """
+    private static final String SEARCH_BY_VECTOR_SQL = """
             SELECT c.id, c.document_id, c.document_version_id, c.title, c.section, c.page_number, c.content,
                    dv.version_label, 1 - (c.embedding <=> ?) AS similarity
             FROM chunk c
@@ -42,6 +42,25 @@ public class ChunkRepository {
             WHERE c.tenant_id = ?
               AND (? IS NULL OR c.metadata ->> 'category' = ANY (?))
             ORDER BY c.embedding <=> ?
+            LIMIT ?
+            """;
+
+    // ts_rank_cd (cover density) discrimina meglio di ts_rank quando piu' termini
+    // della query occorrono vicini nello stesso chunk. La guardia numnode(...) > 0
+    // evita il comportamento indefinito di websearch_to_tsquery su input degenere
+    // (domanda cortissima o composta solo da stopword): in quel caso la ricerca
+    // keyword restituisce semplicemente zero candidati, con fallback naturale al
+    // solo-vettoriale in fase di fusione RRF (si veda RrfMerger).
+    private static final String SEARCH_BY_KEYWORD_SQL = """
+            SELECT c.id, c.document_id, c.document_version_id, c.title, c.section, c.page_number, c.content,
+                   dv.version_label, 1 - (c.embedding <=> ?) AS similarity
+            FROM chunk c
+            JOIN document_version dv ON dv.id = c.document_version_id
+            WHERE c.tenant_id = ?
+              AND (? IS NULL OR c.metadata ->> 'category' = ANY (?))
+              AND numnode(websearch_to_tsquery('italian', ?)) > 0
+              AND c.content_tsv @@ websearch_to_tsquery('italian', ?)
+            ORDER BY ts_rank_cd(c.content_tsv, websearch_to_tsquery('italian', ?)) DESC
             LIMIT ?
             """;
 
@@ -71,41 +90,64 @@ public class ChunkRepository {
         return id;
     }
 
-    public List<ChunkSearchResult> search(UUID tenantId, float[] queryEmbedding, int topK, List<String> categories) {
+    public List<ChunkSearchResult> searchByVector(UUID tenantId, float[] queryEmbedding, int limit, List<String> categories) {
         return jdbcTemplate.execute((ConnectionCallback<List<ChunkSearchResult>>) connection -> {
-            List<ChunkSearchResult> results = new ArrayList<>();
-            try (PreparedStatement ps = connection.prepareStatement(SEARCH_SQL)) {
+            try (PreparedStatement ps = connection.prepareStatement(SEARCH_BY_VECTOR_SQL)) {
                 PGvector vector = new PGvector(queryEmbedding);
                 ps.setObject(1, vector);
                 ps.setObject(2, tenantId);
-                if (categories == null || categories.isEmpty()) {
-                    ps.setNull(3, java.sql.Types.ARRAY, "text[]");
-                    ps.setNull(4, java.sql.Types.ARRAY, "text[]");
-                } else {
-                    java.sql.Array array = connection.createArrayOf("text", categories.toArray());
-                    ps.setArray(3, array);
-                    ps.setArray(4, array);
-                }
+                bindCategoryFilter(connection, ps, 3, categories);
                 ps.setObject(5, vector);
-                ps.setInt(6, topK);
-                try (ResultSet rs = ps.executeQuery()) {
-                    while (rs.next()) {
-                        results.add(new ChunkSearchResult(
-                                (UUID) rs.getObject("id"),
-                                (UUID) rs.getObject("document_id"),
-                                (UUID) rs.getObject("document_version_id"),
-                                rs.getString("title"),
-                                rs.getString("version_label"),
-                                rs.getString("section"),
-                                rs.getInt("page_number"),
-                                rs.getString("content"),
-                                rs.getDouble("similarity")
-                        ));
-                    }
-                }
+                ps.setInt(6, limit);
+                return readResults(ps);
             }
-            return results;
         });
+    }
+
+    public List<ChunkSearchResult> searchByKeyword(UUID tenantId, String questionText, float[] queryEmbedding, int limit, List<String> categories) {
+        return jdbcTemplate.execute((ConnectionCallback<List<ChunkSearchResult>>) connection -> {
+            try (PreparedStatement ps = connection.prepareStatement(SEARCH_BY_KEYWORD_SQL)) {
+                ps.setObject(1, new PGvector(queryEmbedding));
+                ps.setObject(2, tenantId);
+                bindCategoryFilter(connection, ps, 3, categories);
+                ps.setString(5, questionText);
+                ps.setString(6, questionText);
+                ps.setString(7, questionText);
+                ps.setInt(8, limit);
+                return readResults(ps);
+            }
+        });
+    }
+
+    private void bindCategoryFilter(java.sql.Connection connection, PreparedStatement ps, int firstParamIndex, List<String> categories) throws java.sql.SQLException {
+        if (categories == null || categories.isEmpty()) {
+            ps.setNull(firstParamIndex, java.sql.Types.ARRAY, "text[]");
+            ps.setNull(firstParamIndex + 1, java.sql.Types.ARRAY, "text[]");
+        } else {
+            java.sql.Array array = connection.createArrayOf("text", categories.toArray());
+            ps.setArray(firstParamIndex, array);
+            ps.setArray(firstParamIndex + 1, array);
+        }
+    }
+
+    private List<ChunkSearchResult> readResults(PreparedStatement ps) throws java.sql.SQLException {
+        List<ChunkSearchResult> results = new ArrayList<>();
+        try (ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                results.add(new ChunkSearchResult(
+                        (UUID) rs.getObject("id"),
+                        (UUID) rs.getObject("document_id"),
+                        (UUID) rs.getObject("document_version_id"),
+                        rs.getString("title"),
+                        rs.getString("version_label"),
+                        rs.getString("section"),
+                        rs.getInt("page_number"),
+                        rs.getString("content"),
+                        rs.getDouble("similarity")
+                ));
+            }
+        }
+        return results;
     }
 
     /**

@@ -1,7 +1,6 @@
 package com.knowledgeos.rag;
 
 import com.knowledgeos.audit.AuditService;
-import com.knowledgeos.knowledge.ChunkRepository;
 import com.knowledgeos.knowledge.ChunkSearchResult;
 import com.knowledgeos.llm.OllamaChatClient;
 import com.knowledgeos.llm.OllamaEmbeddingClient;
@@ -22,9 +21,9 @@ import java.util.UUID;
 /**
  * Endpoint centrale del prodotto (POST /api/v1/query): dalla domanda in
  * linguaggio naturale alla risposta con fonti verificabili
- * (05_RAG_PIPELINE.md §5-7). Pipeline MVP: metadata filtering (categoria) +
- * ricerca vettoriale (senza hybrid search/reranking, rimandati a
- * Milestone 2) -> Context Builder -> LLM.
+ * (05_RAG_PIPELINE.md §5-7). Pipeline: metadata filtering (categoria) ->
+ * hybrid search (vettoriale + keyword, HybridSearchService) -> reranking
+ * (LlmReranker) -> Context Builder -> LLM.
  */
 @Service
 @RequiredArgsConstructor
@@ -40,7 +39,8 @@ public class AnswerGenerationService {
 
     private final OllamaEmbeddingClient embeddingClient;
     private final OllamaChatClient chatClient;
-    private final ChunkRepository chunkRepository;
+    private final HybridSearchService hybridSearchService;
+    private final LlmReranker llmReranker;
     private final ContextBuilder contextBuilder;
     private final QueryLogRepository queryLogRepository;
     private final AuditService auditService;
@@ -54,8 +54,13 @@ public class AnswerGenerationService {
         float[] questionEmbedding = embeddingClient.embed(request.question());
 
         List<String> categoryFilter = request.filters() != null ? request.filters().category() : null;
-        List<ChunkSearchResult> chunks = chunkRepository.search(
-                tenantId, questionEmbedding, retrievalProperties.topK(), categoryFilter);
+        List<ChunkSearchResult> candidates = hybridSearchService.search(
+                tenantId, request.question(), questionEmbedding, categoryFilter);
+
+        List<RankedChunk> reranked = candidates.isEmpty()
+                ? List.of()
+                : llmReranker.rerank(request.question(), candidates, retrievalProperties.topK());
+        List<ChunkSearchResult> chunks = reranked.stream().map(RankedChunk::chunk).toList();
 
         String answer;
         double confidence;
@@ -66,7 +71,7 @@ public class AnswerGenerationService {
             String context = contextBuilder.build(chunks);
             String prompt = SYSTEM_PROMPT + "\n\nContesto:\n" + context + "\n\nDomanda: " + request.question();
             answer = chatClient.generate(prompt);
-            confidence = chunks.stream().mapToDouble(ChunkSearchResult::similarity).average().orElse(0.0);
+            confidence = reranked.stream().mapToDouble(rc -> rc.rerankScore() / 10.0).average().orElse(0.0);
         }
 
         int latencyMs = (int) (System.currentTimeMillis() - start);
@@ -84,7 +89,7 @@ public class AnswerGenerationService {
         auditService.record("QUERY_EXECUTED", "query_log", log.getId(),
                 Map.of("question", request.question(), "sourcesCount", chunks.size()));
 
-        List<QuerySourceResponse> sources = chunks.stream()
+        List<QuerySourceResponse> sources = reranked.stream()
                 .map(this::toSource)
                 .toList();
 
@@ -93,10 +98,11 @@ public class AnswerGenerationService {
         return new QueryResponse(answer, round(confidence), sources, conversationId, log.getId());
     }
 
-    private QuerySourceResponse toSource(ChunkSearchResult chunk) {
+    private QuerySourceResponse toSource(RankedChunk rankedChunk) {
+        ChunkSearchResult chunk = rankedChunk.chunk();
         String excerpt = chunk.content().length() > 400 ? chunk.content().substring(0, 400) + "..." : chunk.content();
         return new QuerySourceResponse(chunk.documentId(), chunk.documentTitle(), chunk.versionLabel(),
-                chunk.page(), chunk.section(), excerpt, round(chunk.similarity()));
+                chunk.page(), chunk.section(), excerpt, round(rankedChunk.rerankScore() / 10.0));
     }
 
     private double round(double value) {

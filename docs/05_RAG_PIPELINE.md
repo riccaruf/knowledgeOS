@@ -187,13 +187,17 @@ Classificazione leggera (regola euristica o modello piccolo dedicato) della doma
 ### 5.3 Hybrid Search
 
 - **Componente vettoriale**: similarità coseno tra embedding della domanda (stesso modello di embedding del tenant) e `chunk.embedding`, tramite indice HNSW.
-- **Componente keyword**: full-text search PostgreSQL su `chunk.content_tsv`, utile per termini esatti (codici prodotto, sigle, numeri normativi) che la sola ricerca semantica può sotto-pesare.
-- Combinazione: punteggio ibrido (es. combinazione pesata o Reciprocal Rank Fusion) tra i due ranking, non sostituzione dell'uno con l'altro.
+- **Componente keyword**: full-text search PostgreSQL su `chunk.content_tsv` (`websearch_to_tsquery('italian', ...)` + `ts_rank_cd`), utile per termini esatti (codici prodotto, sigle, numeri normativi) che la sola ricerca semantica può sotto-pesare.
+- Combinazione: **Reciprocal Rank Fusion** (costante `rrf-k`, default 60 — valore standard di letteratura) tra la posizione di un chunk nei due ranking, non i punteggi grezzi (non direttamente confrontabili tra coseno e `ts_rank_cd`). Un chunk assente da uno dei due ranking contribuisce solo il termine dell'altro, senza penalità. Il pool fuso (`candidate-pool-size`, default 40, nel range 30–50 indicato sopra) alimenta il passo di reranking successivo, non è ancora il set finale.
+
+**Nota di implementazione**: implementato in `HybridSearchService`/`RrfMerger`/`ChunkRepository.searchByVector`+`searchByKeyword`. Nessuna migration aggiuntiva necessaria: `content_tsv` e il relativo indice GIN erano già presenti nello schema V1, semplicemente non ancora usati da alcuna query.
 
 ### 5.4 Reranking
 
-- I migliori N candidati dell'hybrid search (es. top 30–50) vengono ripassati a un passo di reranking (cross-encoder locale o modello dedicato) che valuta la coppia (domanda, chunk) con maggiore precisione rispetto al solo punteggio di similarità iniziale, producendo il set finale (es. top 5–10) da passare al Context Builder.
+- I migliori N candidati dell'hybrid search (es. top 30–50) vengono ripassati a un passo di reranking (cross-encoder locale o modello dedicato) che valuta la coppia (domanda, chunk) con maggiore precisione rispetto al solo punteggio di similarità iniziale, producendo il set finale (es. top 5–10, `retrieval.top-k`) da passare al Context Builder.
 - Il reranking è un componente sostituibile indipendentemente (principio di modularità), eseguibile on-premise.
+
+**Nota di implementazione**: il reranking è implementato come **LLM-as-reranker** (`LlmReranker`), non come cross-encoder dedicato — un'unica chiamata batched al modello chat già configurato via Ollama (`OllamaChatClient`, `temperature=0`), a cui viene chiesto di assegnare un punteggio 0–10 a ciascun candidato numerato in un solo prompt (non una chiamata per candidato: costo/latenza altrimenti proibitivi su 30–50 candidati). L'output atteso è rigido (`indice|punteggio`, una riga per candidato, parsato da `LlmRerankResponseParser`); righe non conformi vengono ignorate senza far fallire la richiesta. Questa scelta evita di introdurre nuova infrastruttura di inferenza (un microservizio Python con sentence-transformers o un runtime ONNX in-process) in questo incremento — il componente resta comunque dietro l'interfaccia "candidati in ingresso → top-K rankati in uscita", quindi sostituibile con un vero cross-encoder in futuro senza toccare `AnswerGenerationService`. Se la chiamata Ollama fallisce, la risposta non è parsabile, o solo un sottoinsieme dei candidati riceve un punteggio, i candidati privi di punteggio ricevono un punteggio sintetico basato sulla loro posizione nell'ordine hybrid in ingresso — degrado silenzioso all'ordine hybrid, mai un errore verso l'utente.
 
 ---
 
@@ -228,6 +232,8 @@ Ogni risposta generata dal sistema (non necessariamente dal solo LLM: assemblata
 
 - **Risposta naturale**: testo generato.
 - **Livello di confidenza**: calcolato combinando punteggio di reranking dei chunk usati, copertura della domanda da parte del contesto, e (se disponibile) segnali del modello stesso — non un valore arbitrario del solo LLM.
+
+**Nota di implementazione**: nella build attuale la confidence è calcolata solo come media dei punteggi di reranking normalizzati (`rerankScore / 10`) dei chunk effettivamente usati — una semplificazione dichiarata rispetto alla formula completa sopra descritta. Copertura della domanda da parte del contesto e segnali propri del modello restano non implementati, pianificati per un'iterazione successiva di Milestone 2.
 - **Fonti utilizzate**: per ciascun chunk effettivamente incluso nel contesto e ritenuto rilevante: documento, versione, pagina, sezione, estratto originale (si veda contratto in `04_API_SPECIFICATION.md` §4.1).
 
 Esempio (coerente con la vision):
