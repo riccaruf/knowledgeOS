@@ -47,6 +47,11 @@ export interface QueryResponse {
   queryLogId: string;
 }
 
+export interface ModelsResponse {
+  models: string[];
+  defaultModel: string;
+}
+
 export interface MeResponse {
   id: string;
   email: string;

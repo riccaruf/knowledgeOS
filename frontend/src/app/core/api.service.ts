@@ -6,6 +6,7 @@ import { appConfig } from './app-config';
 import {
   DocumentSummaryResponse,
   MeResponse,
+  ModelsResponse,
   PageResponse,
   QueryResponse,
   UploadDocumentResponse,
@@ -50,9 +51,14 @@ export class ApiService {
     return this.http.delete<void>(`${this.baseUrl}/api/v1/documents/${documentId}`);
   }
 
-  query(question: string, category?: string[]): Observable<QueryResponse> {
+  getModels(): Observable<ModelsResponse> {
+    return this.http.get<ModelsResponse>(`${this.baseUrl}/api/v1/models`);
+  }
+
+  query(question: string, category?: string[], llmModel?: string): Observable<QueryResponse> {
     return this.http.post<QueryResponse>(`${this.baseUrl}/api/v1/query`, {
       question,
+      llmModel: llmModel || null,
       filters: category && category.length ? { category } : null,
     });
   }

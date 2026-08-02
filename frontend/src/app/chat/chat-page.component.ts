@@ -1,4 +1,4 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, OnInit, inject, signal } from '@angular/core';
 import { DecimalPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 
@@ -8,6 +8,7 @@ import { QueryResponse } from '../core/models';
 interface ChatTurn {
   question: string;
   response: QueryResponse;
+  modelUsed: string;
 }
 
 @Component({
@@ -17,7 +18,7 @@ interface ChatTurn {
   templateUrl: './chat-page.component.html',
   styleUrl: './chat-page.component.scss',
 })
-export class ChatPageComponent {
+export class ChatPageComponent implements OnInit {
   private api = inject(ApiService);
 
   question = '';
@@ -25,15 +26,36 @@ export class ChatPageComponent {
   error = signal<string | null>(null);
   turns = signal<ChatTurn[]>([]);
 
+  availableModels = signal<string[]>([]);
+  selectedModel = signal<string>('');
+  defaultModel = signal<string>('');
+  showSettings = signal(false);
+  modelsLoading = signal(true);
+
+  ngOnInit(): void {
+    this.api.getModels().subscribe({
+      next: (res) => {
+        this.availableModels.set(res.models);
+        this.defaultModel.set(res.defaultModel);
+        this.selectedModel.set(res.defaultModel);
+        this.modelsLoading.set(false);
+      },
+      error: () => {
+        this.modelsLoading.set(false);
+      },
+    });
+  }
+
   ask(): void {
     const question = this.question.trim();
     if (!question || this.asking()) return;
 
+    const model = this.selectedModel();
     this.asking.set(true);
     this.error.set(null);
-    this.api.query(question).subscribe({
+    this.api.query(question, undefined, model).subscribe({
       next: (response) => {
-        this.turns.update((current) => [...current, { question, response }]);
+        this.turns.update((current) => [...current, { question, response, modelUsed: model }]);
         this.question = '';
         this.asking.set(false);
       },

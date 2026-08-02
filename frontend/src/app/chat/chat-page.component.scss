@@ -1,3 +1,84 @@
+/* ─── Settings bar ────────────────────────────────────────────────── */
+
+.settings-bar {
+  margin-bottom: 1.25rem;
+}
+
+.settings-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.75rem;
+  background: transparent;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  color: #555;
+  transition: border-color 0.15s, background 0.15s;
+
+  &:hover {
+    border-color: #2f6fed;
+    color: #2f6fed;
+  }
+
+  &.active {
+    background: #eef3fd;
+    border-color: #2f6fed;
+    color: #2f6fed;
+  }
+}
+
+.current-model {
+  background: #2f6fed;
+  color: white;
+  border-radius: 4px;
+  padding: 0.1rem 0.45rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.settings-panel {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+  padding: 0.75rem 1rem;
+  background: #f7f9ff;
+  border: 1px solid #dce5f7;
+  border-radius: 8px;
+  font-size: 0.875rem;
+
+  label {
+    color: #444;
+    white-space: nowrap;
+  }
+
+  select {
+    padding: 0.3rem 0.5rem;
+    border: 1px solid #bdd0f5;
+    border-radius: 5px;
+    background: white;
+    font-size: 0.875rem;
+    min-width: 200px;
+    cursor: pointer;
+
+    &:focus {
+      outline: 2px solid #2f6fed;
+      outline-offset: 1px;
+    }
+  }
+}
+
+.models-loading,
+.models-error {
+  font-size: 0.85rem;
+  color: #888;
+  font-style: italic;
+}
+
+/* ─── Chat log ────────────────────────────────────────────────────── */
+
 .chat-log {
   display: flex;
   flex-direction: column;
@@ -20,9 +101,26 @@
   margin-bottom: 0.5rem;
 }
 
+.turn-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  margin-top: 0.35rem;
+}
+
 .confidence {
   font-size: 0.85rem;
   color: #666;
+}
+
+.model-badge {
+  font-size: 0.75rem;
+  background: #f0f4ff;
+  color: #2f6fed;
+  border: 1px solid #c5d7fb;
+  border-radius: 4px;
+  padding: 0.05rem 0.4rem;
+  font-weight: 600;
 }
 
 .sources {
@@ -64,6 +162,8 @@ blockquote {
 .error {
   color: #c0392b;
 }
+
+/* ─── Composer ────────────────────────────────────────────────────── */
 
 .composer {
   display: flex;

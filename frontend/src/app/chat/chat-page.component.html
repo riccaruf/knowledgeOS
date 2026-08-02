@@ -1,12 +1,50 @@
 <h1>Chat</h1>
 
+<!-- Pannello impostazioni modello -->
+<div class="settings-bar">
+  <button
+    type="button"
+    class="settings-toggle"
+    (click)="showSettings.set(!showSettings())"
+    [class.active]="showSettings()"
+    id="chat-settings-toggle"
+  >
+    ⚙ Modello LLM
+    @if (!modelsLoading() && selectedModel()) {
+      <span class="current-model">{{ selectedModel() }}</span>
+    }
+  </button>
+
+  @if (showSettings()) {
+    <div class="settings-panel" id="chat-settings-panel">
+      <label for="model-select">Seleziona il modello:</label>
+      @if (modelsLoading()) {
+        <span class="models-loading">Caricamento modelli...</span>
+      } @else if (availableModels().length === 0) {
+        <span class="models-error">Nessun modello disponibile (Ollama non raggiungibile)</span>
+      } @else {
+        <select id="model-select" [(ngModel)]="selectedModel" name="model">
+          @for (model of availableModels(); track model) {
+            <option [value]="model">
+              {{ model }}{{ model === defaultModel() ? ' (default)' : '' }}
+            </option>
+          }
+        </select>
+      }
+    </div>
+  }
+</div>
+
 <div class="chat-log">
   @for (turn of turns(); track $index) {
     <div class="turn">
       <div class="question">{{ turn.question }}</div>
       <div class="answer">
         <p>{{ turn.response.answer }}</p>
-        <p class="confidence">Confidenza: {{ confidenceLabel(turn.response.confidence) }} ({{ turn.response.confidence | number: '1.0-2' }})</p>
+        <div class="turn-meta">
+          <span class="confidence">Confidenza: {{ confidenceLabel(turn.response.confidence) }} ({{ turn.response.confidence | number: '1.0-2' }})</span>
+          <span class="model-badge">{{ turn.modelUsed }}</span>
+        </div>
 
         @if (turn.response.sources.length) {
           <div class="sources">
@@ -40,8 +78,9 @@
     [(ngModel)]="question"
     name="question"
     (keydown.enter)="ask()"
+    id="chat-input"
   />
-  <button type="button" (click)="ask()" [disabled]="asking()">
+  <button type="button" (click)="ask()" [disabled]="asking()" id="chat-send-btn">
     {{ asking() ? 'Attendere...' : 'Invia' }}
   </button>
 </div>

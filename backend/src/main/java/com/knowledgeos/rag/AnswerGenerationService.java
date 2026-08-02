@@ -70,7 +70,7 @@ public class AnswerGenerationService {
         } else {
             String context = contextBuilder.build(chunks);
             String prompt = SYSTEM_PROMPT + "\n\nContesto:\n" + context + "\n\nDomanda: " + request.question();
-            answer = chatClient.generate(prompt);
+            answer = chatClient.generate(prompt, request.llmModel(), 0.2);
             confidence = reranked.stream().mapToDouble(rc -> rc.rerankScore() / 10.0).average().orElse(0.0);
         }
 

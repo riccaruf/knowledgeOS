@@ -18,6 +18,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.within;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyDouble;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -69,13 +70,13 @@ class AnswerGenerationServiceTest {
     void noCandidatesReturnsFallbackAnswerAndSkipsRerankAndLlm() {
         when(hybridSearchService.search(any(), anyString(), any(), any())).thenReturn(List.of());
 
-        QueryResponse response = service.answer(new QueryRequest("domanda?", null, null));
+        QueryResponse response = service.answer(new QueryRequest("domanda?", null, null, null));
 
         assertThat(response.confidence()).isEqualTo(0.0);
         assertThat(response.sources()).isEmpty();
         assertThat(response.answer()).contains("Non ho trovato informazioni pertinenti");
         verifyNoInteractions(llmReranker);
-        verify(chatClient, never()).generate(anyString());
+        verify(chatClient, never()).generate(anyString(), any(), anyDouble());
     }
 
     @Test
@@ -87,9 +88,9 @@ class AnswerGenerationServiceTest {
         when(llmReranker.rerank(anyString(), eq(candidates), eq(6))).thenReturn(List.of(
                 new RankedChunk(candidates.get(0), 8.0),
                 new RankedChunk(candidates.get(1), 4.0)));
-        when(chatClient.generate(anyString())).thenReturn("Risposta generata.");
+        when(chatClient.generate(anyString(), any(), anyDouble())).thenReturn("Risposta generata.");
 
-        QueryResponse response = service.answer(new QueryRequest("domanda?", null, null));
+        QueryResponse response = service.answer(new QueryRequest("domanda?", null, null, null));
 
         assertThat(response.confidence()).isCloseTo(0.6, within(0.001));
     }
@@ -101,9 +102,9 @@ class AnswerGenerationServiceTest {
         when(hybridSearchService.search(any(), anyString(), any(), any())).thenReturn(candidates);
         when(llmReranker.rerank(anyString(), eq(candidates), eq(6)))
                 .thenReturn(List.of(new RankedChunk(candidates.get(0), 7.5)));
-        when(chatClient.generate(anyString())).thenReturn("Risposta generata.");
+        when(chatClient.generate(anyString(), any(), anyDouble())).thenReturn("Risposta generata.");
 
-        QueryResponse response = service.answer(new QueryRequest("domanda?", null, null));
+        QueryResponse response = service.answer(new QueryRequest("domanda?", null, null, null));
 
         assertThat(response.sources()).hasSize(1);
         assertThat(response.sources().get(0).relevanceScore()).isCloseTo(0.75, within(0.001));

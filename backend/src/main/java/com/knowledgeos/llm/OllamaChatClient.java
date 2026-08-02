@@ -22,13 +22,19 @@ public class OllamaChatClient {
     private final OllamaProperties properties;
 
     public String generate(String prompt) {
-        return generate(prompt, 0.2);
+        return generate(prompt, properties.llmModel(), 0.2);
     }
 
     public String generate(String prompt, double temperature) {
+        return generate(prompt, properties.llmModel(), temperature);
+    }
+
+    /** Genera una risposta usando il modello specificato (sovrascrive il default). */
+    public String generate(String prompt, String model, double temperature) {
+        String resolvedModel = (model != null && !model.isBlank()) ? model : properties.llmModel();
         GenerateResponse response = ollamaRestClient.post()
                 .uri("/api/generate")
-                .body(new GenerateRequest(properties.llmModel(), prompt, false, new GenerateOptions(temperature)))
+                .body(new GenerateRequest(resolvedModel, prompt, false, new GenerateOptions(temperature)))
                 .retrieve()
                 .body(GenerateResponse.class);
 
